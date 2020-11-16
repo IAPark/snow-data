@@ -1,3 +1,7 @@
+use ftp::types::Line;
+use ftp::FtpError;
+use std::path::PathBuf;
+use std::path::Path;
 use chrono::Utc;
 use std::fs::File;
 use ndarray_npy::NpzWriter;
@@ -10,31 +14,37 @@ use chrono::NaiveDate;
 use chrono::Duration;
 use tar::Archive;
 use flate2::read::GzDecoder;
-use std::net::Shutdown;
 use std::convert::TryInto;
 use std::error::Error;
 use std::fmt;
+use std::collections::HashSet;
 
 pub type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
-pub struct DateRange {
+pub struct ShippableDateRange {
   start: NaiveDate,
   end: NaiveDate,
+  skipping: HashSet<NaiveDate>,
 }
-impl DateRange {
-  pub fn new(start: NaiveDate, end: NaiveDate) -> DateRange {
-    DateRange {
+impl ShippableDateRange {
+  pub fn new(start: NaiveDate, end: NaiveDate, skipping: HashSet<NaiveDate>) -> ShippableDateRange {
+    ShippableDateRange {
       start: start,
       end: end,
+      skipping: skipping,
     }
   }
 }
 
-impl std::iter::Iterator for DateRange {
+impl std::iter::Iterator for ShippableDateRange {
   fn next(&mut self) -> std::option::Option<NaiveDate> {
     if self.start < self.end {
       let old_start = self.start;
       self.start += Duration::days(1);
+
+      if self.skipping.contains(&old_start) {
+        return self.next()
+      }
       return Some(old_start)
     } else {
       return None
@@ -43,13 +53,19 @@ impl std::iter::Iterator for DateRange {
   type Item = NaiveDate;
 }
 
-pub fn days_with_data() -> DateRange {
-  return DateRange::new(
+pub fn days_with_data() -> ShippableDateRange {
+  return ShippableDateRange::new(
     NaiveDate::from_ymd(2003, 9, 30),
-    Utc::now().naive_utc().date()
+    Utc::now().naive_utc().date(),
+    days_without_data(),
   )
 }
 
+fn days_without_data() -> HashSet<NaiveDate> {
+  let mut set = HashSet::new();
+  set.insert(NaiveDate::from_ymd(2004, 2, 25)); // there seems to be nothing on this day
+  return set;
+}
 
 #[derive(Debug)]
 pub struct Connection {
@@ -72,16 +88,20 @@ impl Connection {
   }
 
   pub fn archive_date(&mut self, date: NaiveDate, archive_prefix: &str) -> Result<()> {
-    let filename = date
-      .format(&(archive_prefix.to_owned() + "/%Y%m%d_snow_depth.npz"))
-      .to_string();
+    let filename = filename_for_date(date, archive_prefix);
 
-    let mut npz = NpzWriter::new(File::create(filename)?);
     let data = self.get_data(date)?;
+    let mut npz = NpzWriter::new_compressed(File::create(filename)?);
     npz.add_array("snow_depth", &data)?;
 
     return Ok(())
   }
+}
+
+pub fn filename_for_date(date: NaiveDate, archive_prefix: &str) -> PathBuf {
+  return PathBuf::from(date
+      .format(&(archive_prefix.to_owned() + "/%Y%m%d_snow_depth.npz"))
+      .to_string());
 }
 
 
@@ -100,25 +120,34 @@ fn extract_grid(ftp_stream: &mut FtpStream, date: NaiveDate)
         -> Result<Array<i16, Ix2>> {
     let file_path = date.format("/DATASETS/NOAA/G02158/masked/%Y/%m_%b/SNODAS_%Y%m%d.tar")
         .to_string();
-    println!("path to download {:?}", file_path);
-    let reader = ftp_stream.simple_retr(&file_path)?;
-    let mut archive = Archive::new(reader);
-    let entry_path = date.format("us_ssmv11036tS__T0001TTNATS%Y%m%d05HP001.dat.gz").to_string();
 
-    for entry in archive.entries().unwrap() {
-        let entry = entry.unwrap();
-        let path = entry.header().path().unwrap();
-        if path.to_str().unwrap() == entry_path {
-            let mut decoder = GzDecoder::new(BufReader::new(entry));
-            let mut data = Vec::new();
-            let _ = decoder.read_to_end(&mut data);
-            let data: Vec<i16> = data.chunks_exact(2)
-                .map(|bytes| i16::from_be_bytes(bytes.try_into().unwrap()))
-                .collect();
+    let reader = ftp_stream.get(&file_path);
+    let mut archive = Archive::new(reader?);
+    let result = (||{
+      let entry_path = date.format("us_ssmv11036tS__T0001TTNATS%Y%m%d05HP001.dat.gz").to_string();
 
-            let grid = Array::from_shape_vec((3351, 6935), data)?;
-            return Ok(grid)
-        }
-    }
-    return Err(MissingDataError.into())
+      for entry in archive.entries().unwrap() {
+          let entry = entry.unwrap();
+          let path = entry.header().path().unwrap();
+          if path.to_str().unwrap() == entry_path {
+              let mut decoder = GzDecoder::new(BufReader::new(entry));
+              let mut data = Vec::new();
+              let _ = decoder.read_to_end(&mut data);
+              let data: Vec<i16> = data.chunks_exact(2)
+                  .map(|bytes| i16::from_be_bytes(bytes.try_into().unwrap()))
+                  .collect();
+
+              let grid = Array::from_shape_vec((3351, 6935), data)?;
+              return Ok(grid)
+          }
+      }
+      return Err(MissingDataError.into())
+    })();
+
+    drop(archive);
+    ftp_stream.read_response_in(&[450, 226])?;
+
+    ftp_stream.get_ref().write(b"ABOR\r\n")?;
+    ftp_stream.read_response(226)?;
+    return result
 }
