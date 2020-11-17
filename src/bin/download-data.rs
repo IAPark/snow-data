@@ -4,7 +4,8 @@ fn main() -> snodas::Result<()> {
 
     let mut connection = snodas::Connection::new()?;
     let mut failures_in_row = 0;
-    for date in snodas::days_with_data() {
+
+    for date in snodas::date_ranges::days_with_data() {
         if snodas::filename_for_date(date,"data").exists() {
             //println!("Skipping already downloaded {:?}", date);
             failures_in_row=0;
