@@ -34,7 +34,7 @@ impl Connection {
   }
 
   pub fn archive_date(&mut self, date: NaiveDate, archive_prefix: &str) -> Result<()> {
-    let filename = filename_for_date(date, archive_prefix);
+    let filename = filename_for_date(&date, archive_prefix);
 
     let data = self.get_data(date)?;
     let mut npz = NpzWriter::new_compressed(File::create(filename)?);
