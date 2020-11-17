@@ -1,7 +1,4 @@
-use ftp::types::Line;
-use ftp::FtpError;
 use std::path::PathBuf;
-use std::path::Path;
 use chrono::Utc;
 use std::fs::File;
 use ndarray_npy::NpzWriter;
@@ -64,6 +61,25 @@ pub fn days_with_data() -> ShippableDateRange {
 fn days_without_data() -> HashSet<NaiveDate> {
   let mut set = HashSet::new();
   set.insert(NaiveDate::from_ymd(2004, 2, 25)); // there seems to be nothing on this day
+  set.insert(NaiveDate::from_ymd(2004, 8, 31)); // I wonder if they just forgot this was a day
+  set.insert(NaiveDate::from_ymd(2004, 9, 27)); // I wonder if they just forgot this was a day
+  set.insert(NaiveDate::from_ymd(2005, 6, 25)); // I wonder if they just forgot this was a day
+  set.insert(NaiveDate::from_ymd(2005, 8, 1)); // I wonder if they just forgot this was a day
+  set.insert(NaiveDate::from_ymd(2005, 8, 2)); // I wonder if they just forgot this was a day
+  set.insert(NaiveDate::from_ymd(2006, 8, 25));
+  set.insert(NaiveDate::from_ymd(2006, 8, 26));
+  set.insert(NaiveDate::from_ymd(2006, 8, 27));
+  set.insert(NaiveDate::from_ymd(2006, 9, 8));
+  set.insert(NaiveDate::from_ymd(2006, 9, 30));
+  set.insert(NaiveDate::from_ymd(2006, 10, 1));
+  set.insert(NaiveDate::from_ymd(2007, 2, 14));
+  set.insert(NaiveDate::from_ymd(2007, 3, 26));
+  set.insert(NaiveDate::from_ymd(2008, 3, 13));
+  set.insert(NaiveDate::from_ymd(2008, 6, 13));
+  set.insert(NaiveDate::from_ymd(2008, 6, 18));
+  set.insert(NaiveDate::from_ymd(2009, 8, 20));
+  set.insert(NaiveDate::from_ymd(2012, 12, 20));
+
   return set;
 }
 
