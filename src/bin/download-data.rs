@@ -1,4 +1,4 @@
-mod snodas;
+use snodas;
 
 fn main() -> snodas::Result<()> {
 
